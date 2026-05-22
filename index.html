@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>In-store ILP Zone — 사진 업로드</title>
+  <style>
+    body {
+      margin: 0; padding: 28px 20px 48px;
+      font-family: -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+      background: #0B1220; color: #F9FAFB;
+      text-align: center; min-height: 100vh;
+    }
+    h1 { font-size: 22px; margin: 8px 0 6px; }
+    .sub { color: #60A5FA; font-size: 13px; margin-bottom: 20px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #1F2937; padding: 8px 16px; border-radius: 20px;
+      margin: 0 0 24px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #FBBF24; }
+    .dot.ok { background: #22C55E; }
+    button.btn, a.btn {
+      display: inline-block; margin: 8px 0 24px;
+      background: #3B82F6; color: white; padding: 14px 32px;
+      border-radius: 28px; font-weight: 700; font-size: 16px;
+      border: none; cursor: pointer; text-decoration: none;
+    }
+    .step-card {
+      background: #1F2937; border-radius: 14px;
+      padding: 14px 16px; margin: 10px 0;
+      text-align: left; max-width: 480px;
+      margin-left: auto; margin-right: auto;
+    }
+    .step-num {
+      display: inline-block; width: 22px; height: 22px;
+      background: #3B82F6; color: white;
+      border-radius: 50%; text-align: center; line-height: 22px;
+      font-weight: 700; font-size: 12px; margin-right: 10px;
+    }
+    .step-title { font-size: 14px; font-weight: 600; color: #F9FAFB; }
+    .step-desc { color: #9CA3AF; font-size: 12px; margin: 4px 0 0 32px; line-height: 1.6; }
+    .hint { color: #6B7280; font-size: 12px; margin-top: 24px; }
+    .err { color: #EF4444; font-size: 13px; margin-top: 12px; }
+    .selected {
+      background: #1F2937; border-radius: 14px;
+      padding: 14px 16px; margin: 16px auto;
+      max-width: 480px; text-align: left;
+      display: none;
+    }
+    .selected.show { display: block; }
+    .selected .name { color: #F9FAFB; font-size: 14px; font-weight: 600; word-break: break-all; }
+    .selected .meta { color: #9CA3AF; font-size: 12px; margin-top: 4px; }
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+      display: none; align-items: center; justify-content: center;
+      padding: 24px; z-index: 100;
+    }
+    .modal-bg.show { display: flex; }
+    .modal {
+      background: #1F2937; border-radius: 16px;
+      padding: 24px 22px; max-width: 380px; width: 100%;
+      text-align: center;
+    }
+    .modal .icon { font-size: 32px; margin-bottom: 8px; }
+    .modal h3 { margin: 0 0 8px; font-size: 18px; color: #F9FAFB; }
+    .modal p { margin: 0 0 18px; color: #9CA3AF; font-size: 14px; line-height: 1.6; }
+    .modal button {
+      background: #3B82F6; color: white;
+      border: none; border-radius: 24px;
+      padding: 12px 28px; font-weight: 700; font-size: 15px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>In-store ILP Zone</h1>
+  <div class="sub">사진 업로드</div>
+
+  <div class="badge"><span class="dot" id="dot"></span><span id="status">기종 확인 중…</span></div>
+
+  <div id="action-area"></div>
+  <div id="guide"></div>
+  <p class="hint" id="hint"></p>
+  <p class="err" id="err"></p>
+
+  <div class="selected" id="selected">
+    <div class="name" id="sel-name"></div>
+    <div class="meta" id="sel-meta"></div>
+  </div>
+
+  <input type="file"
+         accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif"
+         id="picker" style="display:none">
+
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <div class="icon" id="modal-icon">⚠️</div>
+      <h3 id="modal-title">파일 선택 불가</h3>
+      <p id="modal-msg"></p>
+      <button id="modal-close">다시 선택</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var ua = navigator.userAgent || '';
+  var isAndroid = /Android/i.test(ua);
+  var dot = document.getElementById('dot');
+  var status = document.getElementById('status');
+  var actionArea = document.getElementById('action-area');
+  var guide = document.getElementById('guide');
+  var hint = document.getElementById('hint');
+  var err = document.getElementById('err');
+  var picker = document.getElementById('picker');
+  var selected = document.getElementById('selected');
+  var selName = document.getElementById('sel-name');
+  var selMeta = document.getElementById('sel-meta');
+  var modalBg = document.getElementById('modal-bg');
+  var modalIcon = document.getElementById('modal-icon');
+  var modalTitle = document.getElementById('modal-title');
+  var modalMsg = document.getElementById('modal-msg');
+  var modalClose = document.getElementById('modal-close');
+
+  var MAX_BYTES = 10 * 1024 * 1024;
+  var pendingFile = null;
+
+  function showModal(icon, title, msg) {
+    modalIcon.textContent = icon;
+    modalTitle.textContent = title;
+    modalMsg.textContent = msg;
+    modalBg.classList.add('show');
+  }
+  modalClose.addEventListener('click', function () {
+    modalBg.classList.remove('show');
+    picker.value = '';
+    picker.click();
+  });
+
+  function fmtMb(bytes) { return (bytes / 1024 / 1024).toFixed(1) + 'MB'; }
+
+  function stepCard(num, title, desc) {
+    var div = document.createElement('div');
+    div.className = 'step-card';
+    var t = document.createElement('div');
+    t.className = 'step-title';
+    var n = document.createElement('span');
+    n.className = 'step-num';
+    n.textContent = String(num);
+    t.appendChild(n);
+    t.appendChild(document.createTextNode(title));
+    var d = document.createElement('div');
+    d.className = 'step-desc';
+    d.textContent = desc;
+    div.appendChild(t);
+    div.appendChild(d);
+    return div;
+  }
+
+  function setupGalaxy(model) {
+    dot.classList.add('ok');
+    status.textContent = model ? '갤럭시 ' + model + ' 확인' : '갤럭시 폰 확인';
+
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = '사진 선택';
+    actionArea.innerHTML = '';
+    actionArea.appendChild(btn);
+
+    guide.innerHTML = '';
+    guide.appendChild(stepCard(1, '사진 선택', '버튼을 누르면 갤러리에서 사진 한 장 선택 (10MB 이하).'));
+    guide.appendChild(stepCard(2, '전송하기', '선택한 사진 확인 후 \'전송하기\' 를 누릅니다.'));
+    guide.appendChild(stepCard(3, '공유 시트 → Quick Share', '주변 기기 목록에서 매장 전시폰을 탭하면 전송 시작.'));
+    hint.textContent = 'Chrome / Samsung Internet 모두 동작';
+
+    function resetToPick() {
+      pendingFile = null;
+      selected.classList.remove('show');
+      btn.textContent = '사진 선택';
+      btn.onclick = pick;
+    }
+    function pick() {
+      err.textContent = '';
+      picker.value = '';
+      picker.click();
+    }
+    btn.onclick = pick;
+
+    picker.addEventListener('change', function () {
+      err.textContent = '';
+      var file = picker.files && picker.files[0];
+      if (!file) return;
+
+      // 게이트 1: 영상 차단 (accept 우회 대비)
+      if (!file.type || !file.type.toLowerCase().startsWith('image/')) {
+        showModal('🎬', '동영상은 보낼 수 없어요',
+          '사진(JPG/PNG/HEIC) 만 전송할 수 있습니다.');
+        resetToPick();
+        return;
+      }
+      // 게이트 2: 사이즈 cap
+      if (file.size > MAX_BYTES) {
+        showModal('📦', '파일이 너무 큽니다',
+          '선택한 파일은 ' + fmtMb(file.size) + ' — 10MB 이하 사진만 전송할 수 있어요.');
+        resetToPick();
+        return;
+      }
+
+      // 통과 — 2-단계 클릭 패턴으로 user activation 확보
+      pendingFile = file;
+      selName.textContent = file.name || '사진';
+      selMeta.textContent = (file.type || 'image') + ' · ' + fmtMb(file.size);
+      selected.classList.add('show');
+      btn.textContent = '전송하기';
+      btn.onclick = sendNow;
+    });
+
+    async function sendNow() {
+      err.textContent = '';
+      if (!pendingFile) { resetToPick(); return; }
+      var file = pendingFile;
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'In-store ILP Zone',
+            text: '매장 전시폰으로 사진 전송',
+          });
+          resetToPick();
+        } else if (navigator.share) {
+          await navigator.share({
+            title: 'In-store ILP Zone',
+            text: '매장 전시폰으로 사진 전송',
+          });
+          err.textContent = '이 브라우저는 파일 공유 미지원 — 시트에서 직접 사진 첨부 필요';
+        } else {
+          err.textContent = 'Web Share API 미지원. 갤러리에서 직접 공유해 주세요.';
+        }
+      } catch (e) {
+        if (!e || e.name === 'AbortError') return;
+        var name = e.name || '';
+        if (name === 'NotAllowedError') {
+          err.textContent = '잠시 후 \'전송하기\' 를 다시 눌러 주세요.';
+        } else if (name === 'DataError' || name === 'TypeError') {
+          err.textContent = '이 파일은 공유할 수 없는 형식입니다.';
+        } else if (name === 'SecurityError') {
+          err.textContent = '파일 크기 또는 권한 문제로 전송할 수 없습니다.';
+        } else {
+          err.textContent = '전송 오류: ' + (e.message || name);
+        }
+      }
+    }
+  }
+
+  function setupNonGalaxy(label) {
+    status.textContent = label || '갤럭시가 아닌 기기';
+    actionArea.innerHTML = '';
+    guide.innerHTML = '';
+    guide.appendChild(stepCard(1, 'Quick Share 미지원', '본 체험의 사진 업로드는 갤럭시 전용 기능을 사용합니다.'));
+    var a = document.createElement('a');
+    a.className = 'btn';
+    a.href = 'https://www.samsung.com';
+    a.textContent = 'Samsung.com 으로 이동';
+    actionArea.appendChild(a);
+    hint.textContent = '';
+  }
+
+  if (!isAndroid) {
+    setupNonGalaxy('아이폰 / 기타 기종');
+    return;
+  }
+
+  // 동기 매칭 — Samsung Internet 의 UA 도 freezing 으로 SM-* 가 제거됐을 수 있음.
+  // SamsungBrowser 키워드 또는 SM-* 둘 중 하나 매칭이면 갤럭시 확정.
+  var uaMatch = ua.match(/SM-[A-Z0-9]+/i);
+  var uaSaysSamsung = !!uaMatch || /SamsungBrowser/i.test(ua);
+
+  // Client Hints 가 모델명을 가장 정확히 반환 — 가능하면 항상 거침.
+  function withModel(callback) {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      navigator.userAgentData.getHighEntropyValues(['model']).then(function (d) {
+        callback((d && d.model) || (uaMatch ? uaMatch[0] : null));
+      }).catch(function () {
+        callback(uaMatch ? uaMatch[0] : null);
+      });
+    } else {
+      callback(uaMatch ? uaMatch[0] : null);
+    }
+  }
+
+  if (uaSaysSamsung) {
+    // 갤럭시 확정 — 모델명만 Client Hints 로 보강
+    withModel(function (model) {
+      setupGalaxy(model && /^SM-/i.test(model) ? model : (uaMatch ? uaMatch[0] : null));
+    });
+  } else if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+    // Chrome UA freezing — Client Hints 결과로 분기
+    withModel(function (model) {
+      if (model && /^SM-/i.test(model)) setupGalaxy(model);
+      else setupNonGalaxy('안드로이드 폰 (갤럭시 아님)');
+    });
+  } else {
+    setupNonGalaxy('기종 확인 불가');
+  }
+})();
+</script>
+</body>
+</html>
